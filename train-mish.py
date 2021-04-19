@@ -183,6 +183,8 @@ def main_worker(gpu, ngpus_per_node, args):
             normalize,
         ]))
 
+    print('=> class to idx : ', train_dataset.class_to_idx)
+    
     num_classes = len(train_dataset.classes)
     print('=> dataset classes:  ' + str(num_classes) + ' ' + str(train_dataset.classes))
 
