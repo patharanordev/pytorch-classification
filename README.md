@@ -29,6 +29,9 @@ Train `ResNet50` :
 python3 train.py \
 --arch=resnet50 \
 --model-dir=models/{FILE_NAME} data/{FILE_NAME}
+
+# or
+# python train.py --arch=resnet50 --model-dir=./models ./data
 ```
 
 Train `ResNet50` with `Mish` activation layer :
@@ -37,6 +40,12 @@ Train `ResNet50` with `Mish` activation layer :
 python3 train-mish.py \
 --arch=resnet50 \
 --model-dir=models/{FILE_NAME} data/{FILE_NAME}
+```
+
+Prediction :
+
+```bash
+python predict.py --arch=resnet50 data --resume=models/model_best.pth.tar --classes=device,receipt,sim,worksheet --image=data/train/receipt/receipt_000009.png
 ```
 
 ## Multi-processing Distributed Data Parallel Training
@@ -114,3 +123,4 @@ optional arguments:
                         fastest way to use PyTorch for either single node or
                         multi node data parallel training
 ```
+
