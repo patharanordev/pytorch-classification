@@ -44,100 +44,92 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true', default=True,
                     help='use pre-trained model')
-parser.add_argument('--image', default='', type=str, metavar='PATH',
-                    help='path to target image (default: none)')
+parser.add_argument('--images', default='', type=str, metavar='PATH',
+                    help='path to target images (default: none)')
 parser.add_argument('--classes', default='', type=str,
                     help='Class or category names that separate by comma(,).')
 parser.add_argument('--gpu', default=0, type=int,
                     help='GPU id to use.')
 
-#
-# initiate worker threads (if using distributed multi-GPU)
-#
+class ImageClassification(object):
+    def __init__(self) -> None:
+        self.model = None
+        self.device = torch.device('cuda')
+        self.classes = []
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                               std=[0.229, 0.224, 0.225])
+        
+    def set_classes(self, classes_str:str):
+        self.classes = classes_str.split(',')
+            
+    def load_pretrained_model(self, arch, model_fpath:str):
+        print('=> using pre-trained model "{}"'.format(arch))
+        self.model = models.__dict__[arch](weights='DEFAULT')
+
+        num_classes = len(self.classes)
+        print(f'=> classes ({str(num_classes)}): {str(self.classes)}')
+        
+        # reshape the model for the number of classes in the dataset
+        self.model = reshape_model(self.model, arch, num_classes)
+        self.model.to(self.device)
+
+        start_time = time.time()
+        checkpoint = torch.load(model_fpath, weights_only=True)
+        end_time = time.time()
+        print(f"=> loading time without mmap={end_time - start_time}")
+
+        self.model.load_state_dict(checkpoint['state_dict'])
+        self.model.eval()
+
+    def predict(self, image:Image):
+        
+        preprocess = transforms.Compose([
+            transforms.ToTensor(),
+            self.normalize,
+        ])
+
+        img_preprocessed = preprocess(image)
+        batch_img_tensor = torch.unsqueeze(img_preprocessed, 0)
+
+        start_time = time.time()
+        with torch.no_grad():
+            preds = self.model(batch_img_tensor.to(self.device))
+        end_time = time.time()
+        spend_time = end_time - start_time
+
+        outputs = torch.nn.functional.softmax(preds, dim=1)
+        max_elements, max_idxs = torch.max(outputs[0], dim=0)
+        print("=> - max_elements: ", max_elements)
+        print("=> - max_idxs: ", max_idxs)
+        print(f"=> The predicted result (spend {spend_time} seconds): ", outputs)
+
+        return self.classes[max_idxs]
+
 def main():
     args = parser.parse_args()
-    ngpus_per_node = torch.cuda.device_count()
-    main_worker(args.gpu, ngpus_per_node, args)
-
-#
-# worker thread (per-GPU)
-#
-def main_worker(gpu, ngpus_per_node, args):
-    args.gpu = gpu
-
-    if args.gpu is not None:
-        print("Use GPU: {} for training".format(args.gpu))
-
-    # data loading code
-    traindir = os.path.join(args.data, 'train')
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
     
-    classes = args.classes.split(',')
-
-    num_classes = len(classes)
-    print('=> dataset classes:  ' + str(num_classes) + ' ' + str(classes))
-
-    # create or load the model if using pre-trained (the default)
-    if args.pretrained:
-        print("=> using pre-trained model '{}'".format(args.arch))
-        model = models.__dict__[args.arch](weights='DEFAULT')
-    else:
-        print("=> creating model '{}'".format(args.arch))
-        model = models.__dict__[args.arch]()
-
-    # reshape the model for the number of classes in the dataset
-    model = reshape_model(model, args.arch, num_classes)
-
-    if args.gpu is not None:
-        torch.cuda.set_device(args.gpu)
-        model = model.cuda(args.gpu)
-    else:
-        # DataParallel will divide and allocate batch_size to all available GPUs
-        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
-        else:
-            model = torch.nn.DataParallel(model).cuda()
+    img_cls = ImageClassification()
+    img_cls.set_classes(args.classes)
 
     # optionally resume from a checkpoint
-    if args.resume:
+    if args.resume and args.images:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
             
-            start_time = time.time()
-            checkpoint = torch.load(args.resume, weights_only=True)
-            end_time = time.time()
-            print(f"=> loading time without mmap={end_time - start_time}")
-
-            model.load_state_dict(checkpoint['state_dict'])
-            model.eval()
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
+            img_cls.load_pretrained_model(
+                arch=args.arch, 
+                model_fpath=args.resume)
             
-            image = Image.open(args.image).convert('RGB')
+            images = []
+            image_fpaths = args.images.split(',')
+            for image_fpath in image_fpaths:
+                if os.path.isfile(image_fpath):
+                    images.append(Image.open(image_fpath).convert('RGB'))
 
-            preprocess = transforms.Compose([
-                transforms.ToTensor(),
-                normalize,
-            ])
-            
-            img_preprocessed = preprocess(image)
-            batch_img_tensor = torch.unsqueeze(img_preprocessed, 0)
+            for image in images:
+                label = img_cls.predict(image)
+                print(f"=> The predicted category is: {label}")
 
-            start_time = time.time()
-            with torch.no_grad():
-                preds = model(batch_img_tensor.to(args.gpu))
-            end_time = time.time()
-            spend_time = end_time - start_time
-
-            outputs = torch.nn.functional.softmax(preds, dim=1)
-            max_elements, max_idxs = torch.max(outputs[0], dim=0)
-            print("=> - max_elements: ", max_elements)
-            print("=> - max_idxs: ", max_idxs)
-
-            print(f"=> The predicted result (spend {spend_time} seconds): ", outputs)
-            print(f"=> The predicted category is: {classes[max_idxs]}")
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 

@@ -45,7 +45,7 @@ python3 train-mish.py \
 Prediction :
 
 ```bash
-python predict.py --arch=resnet50 data --resume=models/model_best.pth.tar --classes=device,receipt,sim,worksheet --image=data/train/receipt/receipt_000009.png
+python predict.py --arch=resnet50 data --resume=models/model_best.pth.tar --classes=device,receipt,sim,worksheet --images=data/train/receipt/receipt_000009.png,data/train/sim/sim_000009.png,data/train/device/device_000009.png,data/train/worksheet/worksheet_000002.png
 ```
 
 ## Multi-processing Distributed Data Parallel Training
